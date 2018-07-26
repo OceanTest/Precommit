@@ -40,7 +40,7 @@ timestamps {
                     testResults: '**/ocean_test.xml'
                     ])
             }
-            //Publish the Table      
+            //Publish the result table on the status overview     
             currentBuild.description = "<br /></strong>${resultsAsTable(results)}"
         }        
         stage("Test") {
@@ -53,33 +53,33 @@ timestamps {
 def collectTestResults(String test, Closure passedParser) {
     String copyPath = "$env.ARTIFACTS_COPY_PATH"    
     
-    // Initialize empty result map
+    // Initialize empty result map.
     def resultMap = [:]
 
-    // Gather all the logfiles produced    
+    // Gather all the logfiles produced.    
     def logFiles = sh (
             script: "ls testlogs/${test}/*.log",
             returnStdout:true
             ).readLines()
 
-    // Extract the test name and result from each logfile    
+    // Extract the test name and result from each logfile.    
     logFiles.each { logFile ->
         passedParser(logFile, resultMap)
     }
 
-    sh script: "tar -zpcv -f ${test}.tar.gz ${copyPath}/testlogs/${test}/*.log"
+    sh script: "tar -zPcv -f ${test}.tar.gz ${copyPath}/testlogs/${test}/*.log"
     // Store the zips as a tar file
     archiveArtifacts artifacts: "${test}.tar.gz", allowEmptyArchive: true
 
     // Cleanup
     sh "rm -rf testlogs/${test} ${test}.tar.gz"
 
-    // Return the accumulated result
+    // Return the accumulated result.
     return resultMap
 }
 
 
-// Parser for regression test results
+// Parser for regression test results.
 def jsonTypePassedParser(logFile, resultMap) {   
     String  testName
     boolean testPassed 
@@ -92,7 +92,7 @@ def jsonTypePassedParser(logFile, resultMap) {
     return resultMap  
 }
 
-
+// Generate the table based on different testcases.
 @NonCPS
 String resultsAsTable(def testResults) {
     StringWriter  stringWriter  = new StringWriter()
@@ -107,7 +107,7 @@ String resultsAsTable(def testResults) {
                 testResults.each { test, testResult ->
                     delegate.delegate.tr {
                         delegate.td {
-                            delegate.strong("[Stage] Build ")
+                            delegate.strong("[Stage] ${test} ")
                             delegate.a("Build Logs", href: "${env.BUILD_URL}/artifact/" + "${test}.tar.gz")
                         }
                     }
@@ -123,6 +123,7 @@ String resultsAsTable(def testResults) {
     return stringWriter.toString()
 }
 
+// Generate the xml format report based on different testcases.
 @NonCPS
 String resultsAsJUnit(def testResults) {
     StringWriter  stringWriter  = new StringWriter()
