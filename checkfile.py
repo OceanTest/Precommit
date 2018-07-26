@@ -10,7 +10,7 @@ ExpectedLog = [(filepath + "1098R20_SDK_sdk_nvme_ramdrive_debug.log"), (filepath
 LogName = ["1098R20_SDK_sdk_nvme_ramdrive_debug.log", "ASIC_NVME_Ramdisk_0.log", "C1_ATCM.log"]
 
 if __name__ == "__main__":	
-	f = open("./summary.log","w")
+	f = open("./testlogs/Build/summary.log","w")
 	Log = glob.glob(filepath + r"*.log")           
 	for (FileinBuildStatus, LogNameinBuildStatus) in izip(Log, LogName):
 		if FileinBuildStatus in ExpectedLog:
