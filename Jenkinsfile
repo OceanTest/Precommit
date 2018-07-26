@@ -2,6 +2,13 @@ import groovy.xml.*
 import static java.util.UUID.randomUUID
 
 
+def stageCases = [
+    // Precommit
+    "Build": [passedParser: this.&jsonTypePassedParser]
+]
+
+def testcases = ["Build"]
+
 timestamps {
     node("ocean_linux_node") {
         stage('Build'){
@@ -10,21 +17,31 @@ timestamps {
             writeFile(file: 'Test/1098R20_SDK_sdk_nvme_ramdrive_debug.log', text: "Test")
             writeFile(file: 'Test/ASIC_NVME_Ramdisk_0.log', text: "Test")
             writeFile(file: 'Test/C1_ATCM.log', text: "Test")
+            def results = [:]
+            testcases.each { test ->
+                def settings = stageCases[test]
+                sh script: "mkdir -p testlogs/${test}"
+                sh script: "python checkfile.py"
+                
+                //Collect all test results as a map 
+                Map currentTestResults = [
+                    (test): collectTestResults(                    
+                        test,
+                        settings.passedParser
+                        )
+                    ]
+                results << currentTestResults    
             
-            String copyPath = "$env.ARTIFACTS_COPY_PATH"
-            sh script: "tar -zpcv -f archive.tar.gz " +  copyPath +"/Test/*.log"
-            archiveArtifacts(artifacts: 'archive.tar.gz', excludes: null)
-            sh script: "python checkfile.py"
-            Map currentTestResults = [ "Build": BuildStagePassedParser()]        
-            writeFile(file: 'ocean_test.xml', text: resultsAsJUnit(currentTestResults))
-            //Generate the Junit Report 
-            //archiveArtifacts(artifacts: 'ocean_test.xml', excludes: null)
-            step([
-                  $class: 'JUnitResultArchiver',
-                  testResults: '**/ocean_test.xml'
-                ])
+                writeFile(file: 'ocean_test.xml', text: resultsAsJUnit(currentTestResults))
+                //Generate the Junit Report 
+                //archiveArtifacts(artifacts: 'ocean_test.xml', excludes: null)
+                step([
+                    $class: 'JUnitResultArchiver',
+                    testResults: '**/ocean_test.xml'
+                    ])
+            }
             //Publish the Table      
-            currentBuild.description = "<br /></strong>${resultsAsTable(currentTestResults)}"
+            currentBuild.description = "<br /></strong>${resultsAsTable(results)}"
         }        
         stage("Test") {
             echo "Test Stage"
@@ -33,53 +50,48 @@ timestamps {
 }
 
 // Helper functions
-def collectTestResults() {
-  // Initialize empty result map
-    String  testName
-    boolean testPassed 
+def collectTestResults(String test, Closure passedParser) {
+    String copyPath = "$env.ARTIFACTS_COPY_PATH"    
+    
+    // Initialize empty result map
     def resultMap = [:]
+
+    // Gather all the logfiles produced    
     def logFiles = sh (
-            script: "ls " + copyPath + "/summary.log",
+            script: "ls testlogs/${test}/*.log",
             returnStdout:true
             ).readLines()
 
-    logFiles.each{ logFile ->            
-            testName   = (logFile =~ /(\w*)\.log/)[0][1]
-            testPassed = readFile(logFile).contains("PASS")
-            resultMap << [(testName): testPassed]
-        }
-  return resultMap
+    // Extract the test name and result from each logfile    
+    logFiles.each { logFile ->
+        passedParser(logFile, resultMap)
+    }
+
+    sh script: "tar -zpcv -f ${test}.tar.gz ${copyPath}/testlogs/${test}/*.log"
+    // Store the zips as a tar file
+    archiveArtifacts artifacts: "${test}.tar.gz", allowEmptyArchive: true
+
+    // Cleanup
+    sh "rm -rf testlogs/${test} ${test}.tar.gz"
+
+    // Return the accumulated result
+    return resultMap
 }
 
+
 // Parser for regression test results
-def BuildStagePassedParser() {   
+def jsonTypePassedParser(logFile, resultMap) {   
     String  testName
     boolean testPassed 
-    def resultMap = [:]
-    String copyPath = "$env.ARTIFACTS_COPY_PATH"
-    def logFiles = sh (
-            script: "ls " + copyPath + "/summary.log",
-            returnStdout:true
-            ).readLines()
-    
-    logFiles.each{ logFile -> 
-        readFile(logFile).split("\n").each { line ->
-            testName = line.subSequence(0,line.lastIndexOf(":"))   
-            testPassed = line.contains("PASS")
-            resultMap << [(testName): testPassed]
-            println resultMap
-        }
-    }
+    readFile(logFile).split("\n").each { line ->
+        testName = line.subSequence(0,line.lastIndexOf(":"))   
+        testPassed = line.contains("PASS")
+        resultMap << [(testName): testPassed]
+        println resultMap
+    }    
     return resultMap  
 }
 
-def logParser(logFile) {
-  // Initialize empty result map
-  def logMap = [:]
-  String  testName = (logFile =~ /(\w*)\.log/)[0][1]
-  logMap << [(testName): logFile]
-  return logMap
-}
 
 @NonCPS
 String resultsAsTable(def testResults) {
@@ -95,8 +107,8 @@ String resultsAsTable(def testResults) {
                 testResults.each { test, testResult ->
                     delegate.delegate.tr {
                         delegate.td {
-                            delegate.strong("Build Stage")
-                            delegate.a("Build Logs", href: "${env.BUILD_URL}/artifact/archive.tar.gz")
+                            delegate.strong("[Stage] Build ")
+                            delegate.a("Build Logs", href: "${env.BUILD_URL}/artifact/" + "${test}.tar.gz")
                         }
                     }
                     testResult.each { testName, testPassed ->
