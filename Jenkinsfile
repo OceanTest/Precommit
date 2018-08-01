@@ -20,8 +20,10 @@ timestamps {
             def results = [:]
             testcases.each { test ->
                 def settings = stageCases[test]
+                String artifactsLocation = "${env.ARTIFACTS_COPY_PATH}"
+
                 sh script: "mkdir -p testlogs/${test}"
-                sh script: "python checkfile.py"
+                sh script: "python checkfile.py ${artifactsLocation}/testlogs/${test}"
                 
                 //Collect all test results as a map 
                 Map currentTestResults = [
